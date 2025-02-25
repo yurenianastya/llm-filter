@@ -1,6 +1,8 @@
 services:
   fastapi:
-    build: ./app
+    build: .
+    volumes:
+      - ./app:/app
     container_name: fastapi_server
     ports:
       - "8080:8080"

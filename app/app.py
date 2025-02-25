@@ -1,7 +1,10 @@
-from fastapi import FastAPI, Request
+from filter import UserInput
+from pydantic import ValidationError
+from fastapi import FastAPI, Request, HTTPException
 import requests
 import json
-import pika  # For RabbitMQ
+import requests
+import pika
 
 app = FastAPI()
 
@@ -19,6 +22,10 @@ def log_message_to_rabbitmq(message):
 async def chat_with_model(request: Request):
     data = await request.json()
     user_message = data.get("message", "No input provided")
+    try:
+        user_input = UserInput(text=user_message)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f'Input contains inappropriate language: {user_message}')
 
     log_message_to_rabbitmq({"role": "user", "content": user_message})
 
