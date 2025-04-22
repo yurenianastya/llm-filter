@@ -7,7 +7,7 @@ Project about creating custom LLM filters, using FastAPI, RabbitMQ and Ollama. C
 #### Send prompt
 
 ```http
-  POST /chat
+  POST /prompt
 ```
 
 | Parameter | Type     | Description                |
