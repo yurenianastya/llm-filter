@@ -1,7 +1,7 @@
 services:
   fastapi:
     build:
-      context: ./api
+      context: ./app
     container_name: fastapi_server
     env_file:
       - .env
@@ -13,7 +13,7 @@ services:
       ollama:
         condition: service_started
     volumes:
-      - ./api:/fastapi 
+      - ./app:/fastapi_app
     networks:
       - app_network
 
@@ -33,6 +33,7 @@ services:
       - ${HF_HUB}:/models
     networks:
       - app_network
+    runtime: nvidia
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -54,16 +55,16 @@ services:
 
   ollama:
     image: ollama/ollama
-    runtime: nvidia
     container_name: ollama
     env_file:
       - .env
     ports:
       - "11434:11434"
     volumes:
-      - "${OLLAMA_MODELS_PATH}:/root/.ollama"
+      - ${OLLAMA_MODELS_PATH}:/root/.ollama
     networks:
       - app_network
+    runtime: nvidia
 
 networks:
   app_network:
