@@ -21,6 +21,9 @@ services:
     build:
       context: ./filter
     container_name: filter_service
+    environment:
+      - PYTHONPATH=/filter
+      - PYTHONUNBUFFERED=1
     env_file:
       - .env
     depends_on:

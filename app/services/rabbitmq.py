@@ -1,91 +1,77 @@
+import os
 import uuid
 import json
-import asyncio
-from typing import Any, Dict
-from aio_pika import connect_robust, IncomingMessage, Message, RobustConnection, RobustChannel
-from fastapi import HTTPException
+from threading import Event
 
-PUBLISH_QUEUE_NAME = "preproc_request"
-CONSUME_QUEUE_NAME = "preproc_result"
+from pika import BasicProperties, BlockingConnection, ConnectionParameters, PlainCredentials
+from dotenv import load_dotenv, find_dotenv
 
+load_dotenv(find_dotenv())
+
+EXCHANGE_NAME = os.environ.get("EXCHANGE_NAME")
+QUEUE_TASK = os.environ.get("QUEUE_TASK")
+QUEUE_RESULT = os.environ.get("QUEUE_RESULT")
 
 class RabbitMQService:
-    def __init__(self, rabbitmq_url: str):
-        self.rabbitmq_url: str = rabbitmq_url
-        self.connection: RobustConnection | None = None
-        self.channel: RobustChannel | None = None
+    def __init__(self):
+        self.connection = None
+        self.channel = None
+        self.correlation_id = None
+        self.response = None
+        self.response_event = Event()
+        self.initialize()
 
-    async def connect(self) -> None:
-        """Establish a connection and declare queues."""
-        if self.connection is None or self.connection.is_closed:
-            try:
-                self.connection = await connect_robust(self.rabbitmq_url)
-                self.channel = await self.connection.channel()
-                await self._declare_queues()
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to connect to RabbitMQ: {str(e)}")
+    def initialize(self):
+        params = ConnectionParameters(
+            host='rabbitmq',
+            port=5672,
+            virtual_host='/',
+            credentials=PlainCredentials('guest', 'guest'),
+            blocked_connection_timeout=300
+        )
+        self.connection = BlockingConnection(params)
+        self.channel = self.connection.channel()
 
-    async def _declare_queues(self) -> None:
-        """Declare the publish and consume queues."""
-        if self.channel:
-            await self.channel.declare_queue(PUBLISH_QUEUE_NAME, durable=True)
-            await self.channel.declare_queue(CONSUME_QUEUE_NAME, durable=True)
+        self.channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='direct')
+        self.channel.queue_declare(queue=QUEUE_TASK, durable=True)
+        self.channel.queue_declare(queue=QUEUE_RESULT, durable=True)
 
-    async def send_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Send a message to the publish queue and wait for a response from the consume queue.
+        self.channel.queue_bind(queue=QUEUE_TASK, exchange=EXCHANGE_NAME, routing_key=QUEUE_TASK)
+        self.channel.queue_bind(queue=QUEUE_RESULT, exchange=EXCHANGE_NAME, routing_key=QUEUE_RESULT)
+        self.channel.basic_qos(prefetch_count=1)
 
-        Args:
-            message (Dict[str, Any]): The message to send.
-
-        Returns:
-            Dict[str, Any]: The response message.
-
-        Raises:
-            HTTPException: If the response times out or an error occurs.
-        """
-        await self.connect()
+    def process_request(self, message: str):
+        self.response = None
+        self.response_event.clear()
 
         correlation_id = str(uuid.uuid4())
-        future_response = asyncio.Future()
+        self.correlation_id = correlation_id
 
-        async def on_filter_output(incoming_message: IncomingMessage) -> None:
-            """Callback to process messages from the consume queue."""
-            async with incoming_message.process():
-                if incoming_message.correlation_id == correlation_id:
-                    future_response.set_result(json.loads(incoming_message.body.decode()))
+        self.channel.basic_publish(
+            exchange=EXCHANGE_NAME,
+            routing_key=QUEUE_TASK,
+            body=json.dumps({"message": message}),
+            properties=BasicProperties(
+                reply_to=QUEUE_RESULT,
+                correlation_id=correlation_id
+            )
+        )       
+        def on_response(ch, method, props, body):
+            if props.correlation_id == self.correlation_id:
+                self.response = json.loads(body)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                self.response_event.set()
+                ch.stop_consuming()
 
-        await self._consume_queue(on_filter_output)
+        self.channel.basic_consume(
+            queue=QUEUE_RESULT,
+            on_message_callback=on_response,
+            auto_ack=False
+        )
 
-        message['correlation_id'] = correlation_id
-
-        await self._publish_message(message, correlation_id)
-
-        response = await asyncio.wait_for(future_response, timeout=300)
-        return response
-
-    async def _consume_queue(self, callback) -> None:
-        """Set up a consumer for the consume queue."""
-        if self.channel:
-            queue = await self.channel.get_queue(CONSUME_QUEUE_NAME)
-            await queue.consume(callback)
-
-    async def _publish_message(self, message: Dict[str, Any], correlation_id: str) -> None:
-        """Publish a message to the publish queue."""
-        if self.channel:
-            try:
-                await self.channel.default_exchange.publish(
-                    Message(
-                        body=json.dumps(message).encode(),
-                        correlation_id=correlation_id,
-                        reply_to=CONSUME_QUEUE_NAME,
-                    ),
-                    routing_key=PUBLISH_QUEUE_NAME,
-                )
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to publish message: {str(e)}")
-
-    async def close(self) -> None:
-        """Close the RabbitMQ connection."""
+        self.channel.start_consuming()
+        return self.response
+   
+    def close(self):
         if self.connection and not self.connection.is_closed:
-            await self.connection.close()
+            self.connection.close()

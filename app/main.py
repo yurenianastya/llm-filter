@@ -1,27 +1,34 @@
-from fastapi import FastAPI, Depends
-from pydantic import BaseModel
+import asyncio
+import os
+
+from fastapi import FastAPI, Depends, Request
+
 from services.rabbitmq import RabbitMQService
 from services.model_processing import LLMProcessingService
-import os
 
 app = FastAPI()
 
 def get_llm_service() -> LLMProcessingService:
-    rabbitmq_url = f'amqp://guest:guest@{os.getenv("RABBITMQ_HOST")}'
-    rabbitmq_service = RabbitMQService(rabbitmq_url=rabbitmq_url)
+    rabbitmq_service = RabbitMQService()
     return LLMProcessingService(rabbitmq_service)
 
-class PromptRequest(BaseModel):
-    message: str
-
-@app.post('/prompt/')
+@app.post('/prompt')
 async def process_prompt(
-    prompt: PromptRequest,
+    request: Request,
     llm_service: LLMProcessingService = Depends(get_llm_service)
 ):
-    response = await llm_service.send_message_to_model(prompt.message)
-    return response
+    data = await request.json()
+    prompt = data.get("message")
+    
+    if not prompt:
+        return {"error": "Missing 'prompt' in request body"}
+
+    try:
+        response = await asyncio.to_thread(llm_service.send_message_to_model, prompt)
+    except Exception as e:
+        return {"error": f"An error occurred: {str(e)}"}
+    return {'status': 'After preprocessing', 'message': prompt, 'response': response}
 
 @app.get("/")
-async def root():
-    return {"message": "Hello, FastAPI is running!"}
+def root():
+    return {"message": "FastAPI is running"}
