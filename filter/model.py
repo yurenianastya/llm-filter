@@ -11,10 +11,10 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 hf_token = os.environ.get('HF_TOKEN')
 
 tokenizer = AutoTokenizer.from_pretrained(
-    os.environ.get('HF_MODEL'), use_auth_token=hf_token
+    os.environ.get('HF_MODEL'), token=hf_token
     )
 model = AutoModelForSequenceClassification.from_pretrained(
-    os.environ.get('HF_MODEL'), use_auth_token=hf_token
+    os.environ.get('HF_MODEL'), token=hf_token
     ).to(DEVICE)
 
 if torch.cuda.is_available():
@@ -47,7 +47,7 @@ def classify_message(message: str):
         label = model.config.id2label[label_idx] if hasattr(model.config, 'id2label') else str(label_idx)
 
         print_gpu_usage()
-        return [{"label": label, "score": score}]
+        return {"label": label, "score": score}
     except Exception as e:
         print(f"Error during classification: {e}")
         return None

@@ -8,10 +8,6 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-EXCHANGE_NAME = os.environ.get("EXCHANGE_NAME")
-QUEUE_TASK = os.environ.get("QUEUE_TASK")
-QUEUE_RESULT = os.environ.get("QUEUE_RESULT")
-
 class RabbitMQService:
     def __init__(self):
         self.connection = None
@@ -32,12 +28,12 @@ class RabbitMQService:
         self.connection = BlockingConnection(params)
         self.channel = self.connection.channel()
 
-        self.channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='direct')
-        self.channel.queue_declare(queue=QUEUE_TASK, durable=True)
-        self.channel.queue_declare(queue=QUEUE_RESULT, durable=True)
+        self.channel.exchange_declare(exchange='message_exchange', exchange_type='direct')
+        self.channel.queue_declare(queue='task', durable=True)
+        self.channel.queue_declare(queue='output', durable=True)
 
-        self.channel.queue_bind(queue=QUEUE_TASK, exchange=EXCHANGE_NAME, routing_key=QUEUE_TASK)
-        self.channel.queue_bind(queue=QUEUE_RESULT, exchange=EXCHANGE_NAME, routing_key=QUEUE_RESULT)
+        self.channel.queue_bind(queue='task', exchange='message_exchange', routing_key='task')
+        self.channel.queue_bind(queue='output', exchange='message_exchange', routing_key='output')
         self.channel.basic_qos(prefetch_count=1)
 
     def process_request(self, message: str):
@@ -48,11 +44,11 @@ class RabbitMQService:
         self.correlation_id = correlation_id
 
         self.channel.basic_publish(
-            exchange=EXCHANGE_NAME,
-            routing_key=QUEUE_TASK,
+            exchange='message_exchange',
+            routing_key='task',
             body=json.dumps({"message": message}),
             properties=BasicProperties(
-                reply_to=QUEUE_RESULT,
+                reply_to='output',
                 correlation_id=correlation_id
             )
         )       
@@ -64,7 +60,7 @@ class RabbitMQService:
                 ch.stop_consuming()
 
         self.channel.basic_consume(
-            queue=QUEUE_RESULT,
+            queue='output',
             on_message_callback=on_response,
             auto_ack=False
         )

@@ -4,12 +4,8 @@ from pika import BasicProperties, SelectConnection, ConnectionParameters, PlainC
 
 from model import classify_message
 
-EXCHANGE_NAME = os.environ.get("EXCHANGE_NAME")
-QUEUE_TASK = os.environ.get("QUEUE_TASK")
-QUEUE_RESULT = os.environ.get("QUEUE_RESULT")
-RABBITMQ_URL = os.environ.get("RABBITMQ_HOST")
-
 def process_message(ch, method, properties, body):
+    # Used model for classification: Intel/toxic-prompt-roberta
     response = {}
     try:
         request = json.loads(body)
@@ -20,20 +16,20 @@ def process_message(ch, method, properties, body):
             raise ValueError("Invalid message format")
 
         result = classify_message(input_message)
-        label = result[0].get('label') if result else None
-        score = result[0].get('score') if result else 0
+        label = result.get('label') if result else None
+        score = result.get('score') if result else 0
 
-        if label == 'NOT_TOXIC' or score < 0.4:
-            response = {'status': 'Passed', 'filter_result': result}
+        if label == 'NOT_TOXIC' or score < 0.2:
+            response = {'status': True, 'filter_output': result}
         else:
-            response = {'status': 'Filtered out', 'filter_result': result}
+            response = {'status': False, 'filter_output': result}
 
     except Exception as e:
-        response = {'status': 'Error', 'filter_result': str(e)}
+        response = {'status': 'Error', 'filter_output': str(e)}
 
     try:
         ch.basic_publish(
-            exchange=EXCHANGE_NAME,
+            exchange='message_exchange',
             routing_key=properties.reply_to,
             properties=BasicProperties(
                 correlation_id=properties.correlation_id
@@ -47,10 +43,10 @@ def process_message(ch, method, properties, body):
 
 def on_channel_open(channel):
     print(f"Channel opened: {channel}")
-    channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='direct')
-    channel.queue_declare(queue=QUEUE_TASK, durable=True)
-    channel.queue_declare(queue=QUEUE_RESULT, durable=True)
-    channel.basic_consume(queue=QUEUE_TASK, on_message_callback=process_message)
+    channel.exchange_declare(exchange='message_exchange', exchange_type='direct')
+    channel.queue_declare(queue='task', durable=True)
+    channel.queue_declare(queue='output', durable=True)
+    channel.basic_consume(queue='task', on_message_callback=process_message)
     print("filter worker is registered")
     channel.basic_qos(prefetch_count=1)
 
