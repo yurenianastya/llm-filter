@@ -20,9 +20,6 @@ class RabbitMQService:
     def initialize(self):
         params = ConnectionParameters(
             host='rabbitmq',
-            port=5672,
-            virtual_host='/',
-            credentials=PlainCredentials('guest', 'guest'),
             blocked_connection_timeout=300
         )
         self.connection = BlockingConnection(params)

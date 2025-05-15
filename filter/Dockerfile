@@ -2,20 +2,21 @@ FROM nvidia/cuda:11.8.0-base-ubuntu22.04
 
 WORKDIR /filter
 
-RUN apt-get update && apt-get install --no-install-recommends -y \
-        build-essential \
-        python3 \
-        python3-pip \
-        python3-dev && \
-    	rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && apt-get install --no-install-recommends -y \
+    python3 python3-pip python3-venv && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --upgrade pip
-
-RUN pip3 install --no-cache-dir torch \
-        --index-url https://download.pytorch.org/whl/cu118
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 COPY ./requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+RUN useradd -m app
+
+USER app
+
 CMD ["python3", "main.py"]

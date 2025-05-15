@@ -2,10 +2,9 @@ import json
 import os
 from pika import BasicProperties, SelectConnection, ConnectionParameters, PlainCredentials
 
-from model import classify_message
+from filtering import is_message_safe
 
 def process_message(ch, method, properties, body):
-    # Used model for classification: Intel/toxic-prompt-roberta
     response = {}
     try:
         request = json.loads(body)
@@ -15,17 +14,19 @@ def process_message(ch, method, properties, body):
         if not input_message or not correlation_id:
             raise ValueError("Invalid message format")
 
-        result = classify_message(input_message)
-        label = result.get('label') if result else None
-        score = result.get('score') if result else 0
-
-        if label == 'NOT_TOXIC' or score < 0.2:
-            response = {'status': True, 'filter_output': result}
-        else:
-            response = {'status': False, 'filter_output': result}
+        response = is_message_safe(input_message)
 
     except Exception as e:
-        response = {'status': 'Error', 'filter_output': str(e)}
+        response = {
+            "status": False,
+            "classification_result": {
+                "label": f"ERROR: {e}",
+                "score": 0.0
+            },
+            "semantic_result": {
+                "score": 0.0
+            }
+        }
 
     try:
         ch.basic_publish(
@@ -65,9 +66,6 @@ def initialize():
     try:
         params = ConnectionParameters(
             host='rabbitmq',
-            port=5672,
-            virtual_host='/',
-            credentials=PlainCredentials('guest', 'guest'),
             blocked_connection_timeout=300
         )
         connection = SelectConnection(

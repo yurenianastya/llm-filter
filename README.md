@@ -44,7 +44,15 @@ To run this project, you will need to add the following environment variables to
    - Example path: `/.cache/huggingface/hub`
    - Currently using: `Intel/toxic-prompt-roberta`
 
-3. **Launch Docker Compose**:
+3. **Download Kaggle dataset**:
+   - Visit the [Jigsaw Toxic Comment Classification Challenge](https://www.kaggle.com/competitions/jigsaw-toxic-comment-classification-challenge/data).
+   - Click Download All to get the dataset ZIP archive.
+   - Extract the archive to your local project directory.
+   - Create a local folder structure for example: `./filter/datasets/`
+   - Move `train.csv` into that folder.
+   - Ensure your code refers to correct location in `load_dataset().`
+
+4. **Launch Docker Compose**:
    - Run `docker-compose up` to start the application.
    - The initial download of models and dependencies might take a while. Please be patient as the libraries and models are being fetched.
 
@@ -69,6 +77,4 @@ The message failed the filter and returned a negative result.
 ### Current Features
 - **Preprocessing Filtering**: Initial version of the filter which processes incoming messages using predefined criteria before passing them to the model. This step ensures only relevant messages are processed further.
 - **Postprocessing Filtering**: Added postprocessing functionality that allows further filtering and validation of the model's output.
-
-### Future Plans
-- **Regex Rule-Based Filtering**: A future update will introduce regex-based filtering, which will allow for more flexible, pattern-based message validation. This will enable custom rule creation to filter messages based on specific patterns or keywords dynamically.
+- _In development_ **Semantic filtering**: Currently testing functionality of comparing semantic meanings of text messages alongside classification filtering
