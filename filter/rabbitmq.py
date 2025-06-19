@@ -1,8 +1,11 @@
 import json
-import os
+import logging
+
 from pika import BasicProperties, SelectConnection, ConnectionParameters, PlainCredentials
 
 from filtering import is_message_safe
+
+logger = logging.getLogger(__name__)
 
 def process_message(ch, method, properties, body):
     response = {}
@@ -11,12 +14,16 @@ def process_message(ch, method, properties, body):
         input_message = request.get('message')
         correlation_id = properties.correlation_id
 
+        logger.info("Received message with correlation_id: %s", correlation_id)
+
         if not input_message or not correlation_id:
             raise ValueError("Invalid message format")
 
         response = is_message_safe(input_message)
+        logger.info("Filtering complete for correlation_id: %s", correlation_id)
 
     except Exception as e:
+        logger.exception("Failed to process incoming message: %s", e)
         response = {
             "status": False,
             "classification_result": {
@@ -38,32 +45,35 @@ def process_message(ch, method, properties, body):
             body=json.dumps(response)
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info("Published response for correlation_id: %s", correlation_id)
     except Exception as e:
-        print(f"Error processing message: {e}")
+        logger.exception("Error sending response message: %s", e)
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 def on_channel_open(channel):
-    print(f"Channel opened: {channel}")
+    logger.info("Channel opened: %s", channel)
     channel.exchange_declare(exchange='message_exchange', exchange_type='direct')
     channel.queue_declare(queue='task', durable=True)
     channel.queue_declare(queue='output', durable=True)
-    channel.basic_consume(queue='task', on_message_callback=process_message)
-    print("filter worker is registered")
     channel.basic_qos(prefetch_count=1)
+    channel.basic_consume(queue='task', on_message_callback=process_message)
+    logger.info("Worker registered and consuming from 'task' queue")
 
 def on_connected(connection):
+    logger.info("Connection established to RabbitMQ")
     connection.channel(on_open_callback=on_channel_open)
 
 def on_open_error(connection, exception):
-    print("Failed to connect:", exception)
+    logger.error("Connection failed during setup: %s", exception)
     connection.ioloop.stop()
 
 def on_connection_closed(connection, reason):
-    print(f"Connection closed: {reason}")
+    logger.warning("Connection closed: %s", reason)
     connection.ioloop.stop()
 
 def initialize():
     try:
+        logger.info("Initializing RabbitMQ worker...")
         params = ConnectionParameters(
             host='rabbitmq',
             blocked_connection_timeout=300
@@ -78,4 +88,4 @@ def initialize():
         connection.ioloop.start()
 
     except Exception as e:
-        print("Exception occurred during setup:", e)
+        logger.exception("Exception occurred during worker setup: %s", e)
