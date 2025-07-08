@@ -1,37 +1,15 @@
 import os
+import time
 from logging import getLogger
 
 import httpx
-from pydantic import BaseModel, Field
 from fastapi import HTTPException
 
-from .rabbitmq import RabbitMQService
+from src.core.rabbitmq import RabbitMQService
+from src.pydantic.response import ModelResponse, ModelResponsePayload, ProcessingResult
+from src.utils.metrics import FILTER_DURATION, LLM_RESPONSE_TIME, FILTER_RESULT_COUNTER
 
 logger = getLogger(__name__)
-
-class UserInput(BaseModel):
-    message: str
-
-class FilterOutput(BaseModel):
-    label: str = ""
-    score: float = 0.0
-
-class SemanticOutput(BaseModel):
-    score: float = 0.0
-
-class ProcessingResult(BaseModel):
-    status: bool = False
-    classification_result: FilterOutput = Field(default_factory=FilterOutput)
-    semantic_result: SemanticOutput = Field(default_factory=SemanticOutput)
-
-class ModelResponsePayload(BaseModel):
-    preprocessing_result: ProcessingResult = Field(default_factory=ProcessingResult)
-    postprocessing_result: ProcessingResult = Field(default_factory=ProcessingResult)
-    llm_output: str = ""
-
-class ModelResponse(BaseModel):
-    user_message: str = ""
-    results: ModelResponsePayload = Field(default_factory=ModelResponsePayload)
 
 class MessageManager:
 
@@ -46,21 +24,26 @@ class MessageManager:
 
     def get_filters_results(self, message: str) -> ModelResponse:
         logger.info("Received message: %s", message)
-
         try:
+            start_filter = time.time()
             pre_filter = self.rabbitmq_service.process_request(message)
+            filter_time = time.time() - start_filter
+            FILTER_DURATION.observe(filter_time)
             pre_result = ProcessingResult.parse_obj(pre_filter)
             logger.info("Pre-filter result: %s", pre_result)
         except Exception as e:
-            logger.exception("Pre-filter processing failed")
+            logger.exception("Pre-filter processing failed: %s", e)
             raise HTTPException(status_code=500, detail="Pre-filter processing failed") from e
 
         if not pre_filter.get('status'):
+            FILTER_RESULT_COUNTER.labels(status="blocked", type="pre").inc()
             logger.warning("Message blocked by pre-filter")
             return ModelResponse(user_message=message, results=ModelResponsePayload(preprocessing_result=pre_result))
 
         try:
+            start_llm = time.time()
             llm_output = self._send_http_request(message)
+            LLM_RESPONSE_TIME.observe(time.time() - start_llm)
             logger.info("LLM output: %s", llm_output)
         except Exception as e:
             logger.exception("LLM request failed with exception: %s", e)
@@ -71,12 +54,15 @@ class MessageManager:
             post_result = ProcessingResult.parse_obj(post_filter)
             logger.info("Post-filter result: %s", post_result)
         except Exception as e:
-            logger.exception("Post-filter processing failed")
+            logger.exception("Post-filter processing failed: %s", e)
             raise HTTPException(status_code=500, detail="Post-filter processing failed") from e
 
         if not post_filter.get('status'):
             logger.warning("LLM output blocked by post-filter")
             llm_output = ""
+            FILTER_RESULT_COUNTER.labels(status="blocked", type="post").inc()
+        else:
+            FILTER_RESULT_COUNTER.labels(status="passed", type="post").inc()
 
         return ModelResponse(
             user_message=message,

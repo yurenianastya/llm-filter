@@ -1,10 +1,10 @@
 FROM python:3.12-alpine3.20
 
-WORKDIR /fastapi_app
+WORKDIR /app
 
-COPY . /fastapi_app
+COPY ./requirements.txt ./
 
-RUN pip install --no-cache-dir --upgrade -r /fastapi_app/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 RUN adduser -D app
 

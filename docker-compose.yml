@@ -2,18 +2,20 @@ services:
   fastapi:
     build:
       context: ./app
-    container_name: fastapi_server
+    container_name: fastapi
     env_file:
       - .env
     ports:
       - "80:80"
+    expose:
+      - "80"
     depends_on:
       rabbitmq:
         condition: service_healthy
       ollama:
         condition: service_started
     volumes:
-      - ./app:/fastapi_app
+      - ./app:/app
     networks:
       - app_network
 
@@ -22,7 +24,6 @@ services:
       context: ./filter
     container_name: filter_service
     environment:
-      - PYTHONPATH=/filter
       - PYTHONUNBUFFERED=1
     env_file:
       - .env
@@ -34,9 +35,14 @@ services:
     volumes:
       - ./filter:/filter
       - ${HF_HUB}:/models
+      - ${DATASET}:/data
     networks:
       - app_network
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -67,10 +73,33 @@ services:
       - ${OLLAMA_MODELS_PATH}:/root/.ollama
     networks:
       - app_network
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - app_network
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - app_network
 
 networks:
   app_network:
 
 volumes:
   rabbitmq:
+  grafana-data:

@@ -3,3 +3,5 @@ httpx
 pika
 python-dotenv
 pydantic
+prometheus-fastapi-instrumentator
+prometheus-client
