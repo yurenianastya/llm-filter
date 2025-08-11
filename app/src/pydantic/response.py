@@ -1,20 +1,14 @@
+from typing import Dict
 from pydantic import BaseModel, Field
-
 
 class UserInput(BaseModel):
     message: str
 
-class FilterOutput(BaseModel):
-    label: str = ""
-    score: float = 0.0
-
-class SemanticOutput(BaseModel):
-    score: float = 0.0
-
 class ProcessingResult(BaseModel):
     status: bool = False
-    classification_result: FilterOutput = Field(default_factory=FilterOutput)
-    semantic_result: SemanticOutput = Field(default_factory=SemanticOutput)
+    error: str = Field(default="", exclude=lambda v: v == "")
+    classification_result: Dict = {}
+    semantic_result: Dict = {}
 
 class ModelResponsePayload(BaseModel):
     preprocessing_result: ProcessingResult = Field(default_factory=ProcessingResult)

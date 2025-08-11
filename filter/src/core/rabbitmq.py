@@ -75,14 +75,7 @@ class RabbitMQService:
         except Exception as e:
             logger.exception("Failed to process message: %s", e)
             response = {
-                "status": False,
-                "classification_result": {
-                    "label": f"ERROR: {e}",
-                    "score": 0.0
-                },
-                "semantic_result": {
-                    "score": 0.0
-                }
+                "error": f"ERROR: {e}"
             }
 
         try:

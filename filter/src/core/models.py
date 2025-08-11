@@ -6,14 +6,14 @@ import faiss
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-from src.utils.config import DEVICE, HF_MODEL, HF_TOKEN
+from src.utils.config import DEVICE, HF_MODEL, HF_TOKEN, SEMANTIC_MODEL
 from src.utils.data import load_toxic_texts
 
 logger = logging.getLogger(__name__)
 
 def init_semantic_model():
     try:
-        model = SentenceTransformer("sentence-transformers/all-roberta-large-v1")
+        model = SentenceTransformer(SEMANTIC_MODEL)
         texts = load_toxic_texts()
         vectors = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
         index = faiss.IndexFlatIP(vectors.shape[1])

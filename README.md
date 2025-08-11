@@ -29,6 +29,7 @@ To run this project, you will need to add the following environment variables to
 - `HF_HUB`: Directory where Hugging Face models are cached.
 - `HF_MODEL`: The Hugging Face model to be used for filtering.
 - `HF_TOKEN`: Your Hugging Face API token (if required for accessing models).
+- `DATASET`: Path to locally installed dataset (Jigsaw).
 
 ### Run Locally
 
