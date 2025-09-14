@@ -1,57 +1,68 @@
+from typing import Dict
+from collections import Counter
+
 import logging
 import torch
 import numpy as np
 
 from src.core.models import init_classifier_model, init_semantic_model
-from src.utils.config import DEVICE, keys
+from src.utils.config import DEVICE, KEYS
 
 logger = logging.getLogger(__name__)
 
 semantic_model, semantic_index = init_semantic_model()
 tokenizer, classifier_model = init_classifier_model()
 
-keys = {
-    "toxicity",
-    "severe_toxicity",
-    "obscene",
-    "identity_attack",
-    "insult",
-    "threat",
-    "sexual_explicit"
-}
+def classification_score(
+    text: str,
+    hf_tokenizer,
+    hf_classifier_model,
+    device: str,
+    selected_keys: set
+) -> Dict[str, float]:
+    """
+    Returns classification scores for a given text using a Hugging Face multi-label model.
+    
+    Args:
+        text: Input text to classify.
+        hf_tokenizer: HF tokenizer.
+        hf_classifier_model: HF multi-label classification model.
+        device: 'cpu' or 'cuda'.
+        selected_keys: Optional subset of labels to include in output.
+    
+    Returns:
+        Dictionary mapping labels to probabilities (0–1).
+    """
+    if selected_keys is None:
+        selected_keys = KEYS
 
-def classify(text: str):
-    # this works for: Intel/toxic-prompt-roberta
-    #
-    # try:
-    #     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=128).to(DEVICE)
-    #     with torch.no_grad():
-    #         outputs = classifier_model(**inputs)
-    #     probs = torch.nn.functional.softmax(outputs.logits, dim=1)
-    #     idx = torch.argmax(probs, dim=1).item()
-    #     return {
-    #         "label": classifier_model.config.id2label.get(idx, str(idx)),
-    #         "score": float(probs[0][idx].item())
-    #     }
-    # except Exception as e:
-    #     logger.exception("Classification error: %s", e)
-    #     return { "label": "ERROR", "score": 0.0 }
-    #
-    # unitary/unbiased-toxic-roberta
     try:
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=128).to(DEVICE)
+        inputs = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=128
+        ).to(device)
+
         with torch.no_grad():
             outputs = classifier_model(**inputs)
+
+        # Multi-label: sigmoid activation
         probs = torch.sigmoid(outputs.logits)[0]
         labels = classifier_model.config.id2label
+
         full_scores = {labels[i]: float(probs[i].item()) for i in range(len(probs))}
-        filtered_scores = {k: full_scores[k] for k in keys if k in full_scores}
+        filtered_scores = {k: float(f"{full_scores[k]:.6f}") for k in selected_keys if k in full_scores}
+
         return filtered_scores
-    except Exception:
-        return {k: 0.0 for k in keys}
+
+    except Exception as e:
+        logger.exception("Classification error: %s", e)
+        return {k: 0.0 for k in selected_keys}
 
 
-def semantic_score(text: str):
+def semantic_score(text: str) -> Dict[str, float]:
     try:
         vec = semantic_model.encode([text], normalize_embeddings=True)
         D, _ = semantic_index.search(vec, k=5)
@@ -60,17 +71,44 @@ def semantic_score(text: str):
         logger.exception("Semantic search error: %s", e)
         return { "score": 0.0 }
 
-def is_safe(text: str):
-    classification = classify(text)
-    semantic = semantic_score(text)
 
-    toxic_flag = any(classification.get(label, 0) >= 0.5 for label in keys)
-    sim = semantic["score"]
+def is_recurrent(text: str) -> bool:
+    # for test purposes we won't allow text
+    #  where single word appears more that 20% of the time
+    max_repetition_ratio = 0.2
+    words = text.lower().split()
+    if not words:
+        return False
+    word_counts = Counter(words)
+    _, freq = word_counts.most_common(1)[0]
+    ratio = freq / len(words)
+    if ratio > max_repetition_ratio:
+        return True
+    return False
 
-    status = not (toxic_flag or sim >= 0.45)
+
+def is_safe(text: str) -> Dict[str, float]:
+    """
+    Returns overall safety status for the input text combining classification,
+    semantic similarity, and repetition checks.
+    """
+    classification = classification_score(
+        text,
+        hf_tokenizer=tokenizer,
+        hf_classifier_model=classifier_model,
+        device=DEVICE,
+        selected_keys={"toxicity", "severe_toxicity", "obscene", "insult"}
+    ) if text else {}
+
+    semantic = semantic_score(text) if text else {"score": 0.0}
+    recurrent = is_recurrent(text) if text else False
+
+    toxic_flag = any(classification.get(label, 0) >= 0.5 for label in KEYS)
+    status = not (toxic_flag or semantic["score"] >= 0.45 or recurrent)
 
     return {
         "status": status,
         "classification_result": classification,
-        "semantic_result": semantic
+        "semantic_result": semantic,
+        "is_recurrent": recurrent
     }

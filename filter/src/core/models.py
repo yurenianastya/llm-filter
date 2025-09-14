@@ -11,11 +11,19 @@ from src.utils.data import load_toxic_texts
 
 logger = logging.getLogger(__name__)
 
+
 def init_semantic_model():
+    """
+    Initializes the semantic model and FAISS index for similarity search.
+    """
     try:
         model = SentenceTransformer(SEMANTIC_MODEL)
         texts = load_toxic_texts()
-        vectors = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+        vectors = model.encode(
+            texts,
+            convert_to_numpy=True,
+            normalize_embeddings=True
+        )
         index = faiss.IndexFlatIP(vectors.shape[1])
         index.add(vectors)
         return model, index
@@ -23,10 +31,21 @@ def init_semantic_model():
         logger.exception("Semantic model init failed: %s", e)
         raise
 
-def init_classifier_model():
+def init_classifier_model(model_name: str = HF_MODEL, token: str = HF_TOKEN):
+    """
+    Initializes any Hugging Face sequence classification model and tokenizer.
+
+    Args:
+        model_name: Hugging Face model name.
+        token: Optional authentication token for private HF models.
+
+    Returns:
+        tokenizer, model
+    """
     try:
-        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL, token=HF_TOKEN)
-        model = AutoModelForSequenceClassification.from_pretrained(HF_MODEL, token=HF_TOKEN).to(DEVICE)
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token=token)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name, token=token).to(DEVICE)
+        
         if torch.cuda.is_available():
             model = model.half()
         model.eval()

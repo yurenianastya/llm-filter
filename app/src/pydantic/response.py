@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 from pydantic import BaseModel, Field
 
 class UserInput(BaseModel):
@@ -6,9 +6,10 @@ class UserInput(BaseModel):
 
 class ProcessingResult(BaseModel):
     status: bool = False
-    error: str = Field(default="", exclude=lambda v: v == "")
+    error: Optional[str] = None
     classification_result: Dict = {}
     semantic_result: Dict = {}
+    is_recurrent: Optional[bool] = None
 
 class ModelResponsePayload(BaseModel):
     preprocessing_result: ProcessingResult = Field(default_factory=ProcessingResult)
