@@ -1,11 +1,18 @@
 import logging
+import os
+
 from datasets import load_dataset
 
 logger = logging.getLogger(__name__)
 
 def load_toxic_texts(threshold=0.7, data_path='/data'):
     try:
-        dataset = load_dataset("jigsaw_toxicity_pred", data_dir=data_path, split="train", trust_remote_code=True)
+        data_files = {
+        "train": os.path.join(data_path, "train.csv"),
+        "test": os.path.join(data_path, "test.csv")
+        }
+        # jigsaw_toxicity_pred dataset
+        dataset = load_dataset("csv", data_files=data_files, split="train", streaming=True)
         texts = [
             x['comment_text'] for x in dataset
             if max(

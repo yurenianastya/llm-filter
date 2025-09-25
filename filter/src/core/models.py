@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import torch
-import faiss
+import scann
 
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -14,19 +14,30 @@ logger = logging.getLogger(__name__)
 
 def init_semantic_model():
     """
-    Initializes the semantic model and FAISS index for similarity search.
+    Initializes the semantic model and ScaNN index for similarity search.
+    Returns the SentenceTransformer model and a ScaNN searcher.
     """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
         model = SentenceTransformer(SEMANTIC_MODEL)
         texts = load_toxic_texts()
         vectors = model.encode(
             texts,
             convert_to_numpy=True,
-            normalize_embeddings=True
-        )
-        index = faiss.IndexFlatIP(vectors.shape[1])
-        index.add(vectors)
-        return model, index
+            normalize_embeddings=True,
+            device=device
+        ).astype(np.float32)  # ScaNN requires float32
+
+        # Build ScaNN index
+        searcher = scann.scann_ops_pybind.builder(
+            vectors, 5, "dot_product"  # k=5 nearest neighbors
+        ).tree(
+            num_leaves=200, num_leaves_to_search=10, training_sample_size=min(250000, len(vectors))
+        ).score_ah(
+            2, anisotropic_quantization_threshold=0.2
+        ).build()
+
+        return model, searcher
     except Exception as e:
         logger.exception("Semantic model init failed: %s", e)
         raise

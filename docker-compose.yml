@@ -23,6 +23,7 @@ services:
     build:
       context: ./filter
     container_name: filter_service
+    runtime: nvidia
     environment:
       - PYTHONUNBUFFERED=1
     env_file:
@@ -38,11 +39,6 @@ services:
       - ${DATASET}:/data
     networks:
       - app_network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -65,6 +61,7 @@ services:
   ollama:
     image: ollama/ollama
     container_name: ollama
+    runtime: nvidia
     env_file:
       - .env
     ports:
@@ -73,11 +70,6 @@ services:
       - ${OLLAMA_MODELS_PATH}:/root/.ollama
     networks:
       - app_network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
 
   prometheus:
     image: prom/prometheus

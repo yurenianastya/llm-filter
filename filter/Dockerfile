@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.8.0-base-ubuntu22.04
+FROM nvidia/cuda:12.9.1-base-ubuntu22.04
 
 WORKDIR /filter
 
@@ -10,8 +10,10 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY ./requirements.txt ./
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip uninstall --no-cache-dir -y keras \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir tf-keras
 
 RUN useradd -m app
 

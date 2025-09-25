@@ -4,4 +4,5 @@ python-dotenv
 transformers
 datasets
 sentence-transformers
-faiss-gpu
+scann
+tf-keras

@@ -12,8 +12,8 @@ SEMANTIC_MODEL = os.environ.get('SEMANTIC_MODEL')
 torch.set_float32_matmul_precision('high')
 
 KEYS = {
-    "toxicity",
-    "severe_toxicity",
+    "toxic",
+    "severe_toxic",
     "obscene",
     "identity_attack",
     "insult",

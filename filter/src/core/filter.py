@@ -1,5 +1,6 @@
 from typing import Dict
 from collections import Counter
+import re, unicodedata
 
 import logging
 import torch
@@ -73,8 +74,10 @@ def semantic_score(text: str) -> Dict[str, float]:
 
 
 def is_recurrent(text: str) -> bool:
-    # for test purposes we won't allow text
-    #  where single word appears more that 20% of the time
+    """
+    for test purposes we won't allow text
+    where single word appears more that 20% of the time
+    """
     max_repetition_ratio = 0.2
     words = text.lower().split()
     if not words:
@@ -85,6 +88,55 @@ def is_recurrent(text: str) -> bool:
     if ratio > max_repetition_ratio:
         return True
     return False
+
+def character_anomalies(text: str) -> float:
+    """
+    Returns a single anomaly score (0–1) based on character-level irregularities.
+    Higher values mean more anomalous content.
+    """
+    length = len(text) or 1
+
+    punctuation_ratio = sum(c in "!?." for c in text) / length
+    caps_ratio = sum(c.isupper() for c in text) / length
+    repeat_chars = 1.0 if re.search(r"(.)\1{3,}", text) else 0.0
+    non_printable = 1.0 if any(unicodedata.category(c).startswith("C") for c in text) else 0.0
+    symbol_ratio = sum(not c.isalnum() and not c.isspace() for c in text) / length
+
+    # Weighted aggregation
+    score = (
+        0.2 * punctuation_ratio +
+        0.2 * caps_ratio +
+        0.2 * symbol_ratio +
+        0.2 * repeat_chars +
+        0.2 * non_printable
+    )
+
+    return min(score, 1.0)
+
+def mixed_script_ratio(text: str) -> float:
+    """
+    Returns the ratio of tokens containing mixed scripts (e.g., Latin + Cyrillic).
+    Higher values indicate more mixed-script content.
+    """
+    if not text:
+        return 0.0
+
+    def script_of_char(c):
+        if 'LATIN' in unicodedata.name(c, ''):
+            return 'LATIN'
+        if 'CYRILLIC' in unicodedata.name(c, ''):
+            return 'CYRILLIC'
+        return 'OTHER'
+
+    tokens = text.split()
+    mixed_count = 0
+
+    for token in tokens:
+        scripts = set(script_of_char(c) for c in token if c.isalpha())
+        if len(scripts) > 1:
+            mixed_count += 1
+
+    return mixed_count / max(len(tokens), 1)
 
 
 def is_safe(text: str) -> Dict[str, float]:
@@ -97,18 +149,27 @@ def is_safe(text: str) -> Dict[str, float]:
         hf_tokenizer=tokenizer,
         hf_classifier_model=classifier_model,
         device=DEVICE,
-        selected_keys={"toxicity", "severe_toxicity", "obscene", "insult"}
+        selected_keys={"toxic", "severe_toxic", "obscene", "insult"}
     ) if text else {}
+    semantic = semantic_score(text)
+    recurrent = is_recurrent(text)
+    anomalies = character_anomalies(text)
+    mixed_text = mixed_script_ratio(text)
+    toxic_flag = any(classification.get(label, 0) > 0.5 for label in KEYS)
 
-    semantic = semantic_score(text) if text else {"score": 0.0}
-    recurrent = is_recurrent(text) if text else False
-
-    toxic_flag = any(classification.get(label, 0) >= 0.5 for label in KEYS)
-    status = not (toxic_flag or semantic["score"] >= 0.45 or recurrent)
+    status = not (
+        toxic_flag
+        or semantic["score"] >= 0.45
+        or recurrent 
+        or anomalies > 0.4
+        or mixed_text > 0.35
+    )
 
     return {
         "status": status,
         "classification_result": classification,
-        "semantic_result": semantic,
-        "is_recurrent": recurrent
+        "semantic_result": semantic["score"],
+        "is_recurrent_result": recurrent,
+        "anomaly_result": anomalies,
+        "mixed_language_result": mixed_text
     }
